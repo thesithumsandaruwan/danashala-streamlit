@@ -2,6 +2,11 @@
 ## Streamlit approach
 
 ### Installation
+
+- clone the repository
+```
+git clone https://github.com/thesithumsandaruwan/danashala-streamlit.git
+```
 - create a virtual enviorment
 ```
 python -m venv .venv
