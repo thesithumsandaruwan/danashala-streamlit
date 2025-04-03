@@ -40,6 +40,8 @@ class MonkAgent(mesa.Agent):
     self.assigned_spot_index = None
     self.target_pos = None
     self.agent_radius = agent_radius
+    self.approach_timer = 0  # Add a timer for approaching state
+    self.has_dined = False   # Ensure dining happens only once
 
   def is_agent_ahead_too_close(self):
     """Check if the agent directly ahead (ID-1) is too close."""
@@ -71,6 +73,15 @@ class MonkAgent(mesa.Agent):
 
     return False # No one problematic found
 
+  def avoid_dining_spots(self, next_pos):
+    """Check if the next position would collide with any dining spot that's not ours."""
+    safe_dist = self.agent_radius * 2
+    
+    for i, spot in enumerate(self.model.dining_spots):
+        if i != self.assigned_spot_index and spot["occupied_by"] is not None:
+            if distance(next_pos, spot["pos"]) < safe_dist:
+                return True  # Too close to someone else's dining spot
+    return False
 
   def step(self):
     """Execute one step of the agent's logic."""
@@ -102,11 +113,10 @@ class MonkAgent(mesa.Agent):
       if distance(self.pos, self.target_pos) < tol:
           if self.path_index == self.model.dining_entry_path_index:
               self.state = "APPROACHING_DINING"
-              # Target remains the entry point; logic below handles spot finding
+              self.approach_timer = 0  # Reset approach timer
           elif self.path_index >= len(self.model.path_points) - 1:
               self.state = "EXITED"
               self.model.exited_count += 1
-              #print(f"Agent {self.unique_id} exited.")
               self.remove() # Use agent.remove()
               return
           else:
@@ -115,25 +125,30 @@ class MonkAgent(mesa.Agent):
 
       # Move towards the current target path point only if target exists
       if self.target_pos:
-            self.pos = move_towards(self.pos, self.target_pos, self.speed)
+            # Calculate next position
+            next_pos = move_towards(self.pos, self.target_pos, self.speed)
+            self.pos = next_pos
 
     elif self.state == "APPROACHING_DINING":
-       spot_index = self.model.find_available_dining_spot(self.unique_id)
+       # Add a small delay to stagger agents
+       self.approach_timer += 1
+       if self.approach_timer < self.unique_id % 3:  # Use ID to stagger approaches
+           return
+           
+       spot_index = self.model.find_available_dining_spot(self.unique_id, self.pos)
        if spot_index is not None:
           self.assigned_spot_index = spot_index
           self.target_pos = self.model.dining_spots[spot_index]["pos"]
           self.state = "MOVING_TO_SPOT"
        else:
-          entry_point = self.model.path_points[self.model.dining_entry_path_index]
-          if distance(self.pos, entry_point) > 5:  # move until near the entry point
-              self.pos = move_towards(self.pos, entry_point, self.speed * 0.3)
-          # else: remain in place waiting for a dining spot
+          # Remain at the dining entry point waiting for a free spot
+          self.pos = self.model.path_points[self.model.dining_entry_path_index]
 
     elif self.state == "MOVING_TO_SPOT":
       if self.target_pos:
         if distance(self.pos, self.target_pos) < tol:
-          self.state = "WAITING"
-          self.wait_timer = 0
+          self.state = "DINING"
+          self.wait_timer = 0  # start dining timer
         else:
           self.pos = move_towards(self.pos, self.target_pos, self.speed)
 
@@ -143,19 +158,28 @@ class MonkAgent(mesa.Agent):
            self.state = "DINING"
 
     elif self.state == "DINING":
-        if self.assigned_spot_index is not None:
-            self.model.release_dining_spot(self.assigned_spot_index)
-            self.assigned_spot_index = None
-        self.state = "REJOINING_PATH"
-        self.path_index = self.model.dining_exit_path_index
-        if self.path_index < len(self.model.path_points):
+        if not self.has_dined:
+            self.wait_timer += 1
+            if self.wait_timer >= self.model.dining_wait_time:
+                self.has_dined = True
+                # Release the dining spot once dinner is complete
+                if self.assigned_spot_index is not None:
+                    self.model.release_dining_spot(self.assigned_spot_index)
+                    self.assigned_spot_index = None
+                self.state = "REJOINING_PATH"
+                self.path_index = self.model.dining_exit_path_index
+                if self.path_index < len(self.model.path_points):
+                    self.target_pos = self.model.path_points[self.path_index]
+                else:
+                    self.state = "EXITED"
+                    self.model.exited_count += 1
+                    self.remove()
+                    return
+        else:
+            # Safety: if already dined, ensure agent remains dining for its full duration before exiting
+            self.state = "REJOINING_PATH"
+            self.path_index = self.model.dining_exit_path_index
             self.target_pos = self.model.path_points[self.path_index]
-        else: # Exit immediately if exit path index is invalid
-             self.state = "EXITED"
-             self.model.exited_count +=1
-             self.remove()
-             return
-
 
     elif self.state == "REJOINING_PATH":
       if self.target_pos:
@@ -170,7 +194,16 @@ class MonkAgent(mesa.Agent):
                    self.remove() # Use agent.remove()
                    return
           else:
-              self.pos = move_towards(self.pos, self.target_pos, self.speed)
+              # Calculate next position while avoiding dining spots
+              next_pos = move_towards(self.pos, self.target_pos, self.speed)
+              
+              # If we're rejoining the path, avoid going through dining spots
+              if self.avoid_dining_spots(next_pos):
+                  # Go around by taking a direct path to the exit point
+                  exit_point = self.model.path_points[self.model.dining_exit_path_index]
+                  next_pos = move_towards(self.pos, exit_point, self.speed * 0.8)
+                  
+              self.pos = next_pos
 
 
 # --- Model Definition (Mesa 3.x) ---
@@ -200,7 +233,7 @@ class DiningHallModel(mesa.Model):
         (110, 60),           # 2: Arrive dining latitude
         (75, 60),           # 3: *Dining Entry Point*
         (75, 340),           # 4: *Dining Exit Point*
-        (180, 340),           # 5: Turn away
+        (180, 340),           # 5: Turn away (moved further from dining spots)
         (180, height + 20),   # 6: Exit point
     ]
     self.dining_entry_path_index = 3
@@ -208,7 +241,7 @@ class DiningHallModel(mesa.Model):
 
     # Dining spots calculation (remains the same logic)
     self.dining_spots = []
-    dining_x = 90
+    dining_x = 65  # Move dining spots further left away from the path
     if self.dining_entry_path_index < len(self.path_points) and self.dining_exit_path_index < len(self.path_points):
         path_y_start = 85
         path_y_end = 305
@@ -239,14 +272,19 @@ class DiningHallModel(mesa.Model):
         agent_reporters={"State": "state", "Position": "pos"}
     )
 
-  def find_available_dining_spot(self, agent_id):
-      """Finds the first available spot and marks it as occupied."""
-      # This logic using agent_id is fine as Mesa assigns it before calling step
+  def find_available_dining_spot(self, agent_id, agent_pos):
+      """Finds the closest available spot and marks it as occupied."""
+      candidate_index = None
+      min_dist = float('inf')
       for i, spot in enumerate(self.dining_spots):
           if spot["occupied_by"] is None:
-              spot["occupied_by"] = agent_id
-              return i
-      return None
+              d = distance(agent_pos, spot["pos"])
+              if d < min_dist:
+                  min_dist = d
+                  candidate_index = i
+      if candidate_index is not None:
+          self.dining_spots[candidate_index]["occupied_by"] = agent_id
+      return candidate_index
 
   def release_dining_spot(self, spot_index):
       """Marks a dining spot as free."""
@@ -286,6 +324,10 @@ class DiningHallModel(mesa.Model):
           # if self.created_agent_count > self.num_agents_target / 2:
           #      self.agent_creation_interval = 10 # Example adjustment
           #print(f"Step {self.steps}: Added agent {agent.unique_id}") # unique_id is assigned now
+
+      # After adding many agents, slow down the creation rate
+      if self.created_agent_count > self.num_agents_target / 2:
+          self.agent_creation_interval = max(3, self.agent_creation_interval)  # Adjust minimum interval
 
   def step(self):
     """Advance the model by one step."""

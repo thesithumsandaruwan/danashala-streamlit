@@ -157,9 +157,9 @@ if st.sidebar.button("Run Simulation", key="run_button"):
 
                 # Draw Agents
                 agent_colors = {
-                    "ENTERING": "gray", "MOVING": "blue", "APPROACHING_DINING": "orange",
-                    "MOVING_TO_SPOT": "purple", "WAITING": "red", "DINING": "pink",
-                    "REJOINING_PATH": "cyan", "EXITED": "black"
+                    "ENTERING": "gray", "MOVING": "yellow", "APPROACHING_DINING": "yellow",
+                    "MOVING_TO_SPOT": "yellow", "WAITING": "orange", "DINING": "red",
+                    "REJOINING_PATH": "yellow", "EXITED": "black"
                 }
                 if hasattr(st.session_state.model, 'agents'):
                     for agent in st.session_state.model.agents:
