@@ -196,22 +196,22 @@ class DiningHallModel(mesa.Model):
     # Path definition (remains the same logic)
     self.path_points = [
         (width, 180),         # 0: Start
-        (220, 180),           # 1: Turn down
-        (220, 100),           # 2: Arrive dining latitude
-        (180, 100),           # 3: *Dining Entry Point*
-        (180, 400),           # 4: *Dining Exit Point*
-        (220, 400),           # 5: Turn away
-        (220, height + 20),   # 6: Exit point
+        (110, 180),           # 1: Turn down
+        (110, 60),           # 2: Arrive dining latitude
+        (75, 60),           # 3: *Dining Entry Point*
+        (75, 340),           # 4: *Dining Exit Point*
+        (180, 340),           # 5: Turn away
+        (180, height + 20),   # 6: Exit point
     ]
     self.dining_entry_path_index = 3
     self.dining_exit_path_index = 4
 
     # Dining spots calculation (remains the same logic)
     self.dining_spots = []
-    dining_x = 160
+    dining_x = 90
     if self.dining_entry_path_index < len(self.path_points) and self.dining_exit_path_index < len(self.path_points):
-        path_y_start = self.path_points[self.dining_entry_path_index][1]
-        path_y_end = self.path_points[self.dining_exit_path_index][1]
+        path_y_start = 85
+        path_y_end = 305
         spot_spacing = (path_y_end - path_y_start) / (self.num_dining_spots + 1) if self.num_dining_spots > 0 else 0
         for i in range(self.num_dining_spots):
             spot_y = path_y_start + (i + 1) * spot_spacing

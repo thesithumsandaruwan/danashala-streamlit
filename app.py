@@ -28,7 +28,7 @@ st.write("Simulating monks moving along a path, stopping at dining spots, and ex
 # --- Simulation Parameters (Sidebar) ---
 st.sidebar.header("Simulation Parameters")
 N_agents = st.sidebar.slider("Number of Monks (Target)", 5, 500, 100, key="n_agents") # Added key for potential state issues
-agent_speed = st.sidebar.slider("Average Agent Speed", 1.0, 5.0, 2.0, 0.1, key="agent_speed")
+agent_speed = st.sidebar.slider("Average Agent Speed", 1.0, 10.0, 2.0, 0.1, key="agent_speed")
 dining_wait_time = st.sidebar.slider("Dining Wait Time (steps)", 10, 200, 50, key="wait_time")
 num_dining_spots = st.sidebar.slider("Number of Dining Spots", 1, 20, 10, key="n_spots") # Increased max a bit
 max_steps = st.sidebar.number_input("Maximum Simulation Steps", 100, 5000, 1000, key="max_steps")
