@@ -84,6 +84,8 @@ class MonkAgent(mesa.Agent):
        # If too close to an agent ahead, pause this step
        return
 
+    tol = 1e-2  # tolerance for position comparisons
+
     # --- State Machine Logic ---
     if self.state == "ENTERING":
         self.path_index = 1
@@ -97,7 +99,7 @@ class MonkAgent(mesa.Agent):
              return
 
     elif self.state == "MOVING":
-      if self.pos == self.target_pos:
+      if distance(self.pos, self.target_pos) < tol:
           if self.path_index == self.model.dining_entry_path_index:
               self.state = "APPROACHING_DINING"
               # Target remains the entry point; logic below handles spot finding
@@ -122,13 +124,14 @@ class MonkAgent(mesa.Agent):
           self.target_pos = self.model.dining_spots[spot_index]["pos"]
           self.state = "MOVING_TO_SPOT"
        else:
-           # Wait near entrance: Move slowly along main path segment past entrance
-           target_main_path_point = self.model.path_points[self.model.dining_entry_path_index + 1]
-           self.pos = move_towards(self.pos, target_main_path_point, self.speed * 0.3)
+          entry_point = self.model.path_points[self.model.dining_entry_path_index]
+          if distance(self.pos, entry_point) > 5:  # move until near the entry point
+              self.pos = move_towards(self.pos, entry_point, self.speed * 0.3)
+          # else: remain in place waiting for a dining spot
 
     elif self.state == "MOVING_TO_SPOT":
       if self.target_pos:
-        if self.pos == self.target_pos:
+        if distance(self.pos, self.target_pos) < tol:
           self.state = "WAITING"
           self.wait_timer = 0
         else:
@@ -156,7 +159,7 @@ class MonkAgent(mesa.Agent):
 
     elif self.state == "REJOINING_PATH":
       if self.target_pos:
-          if self.pos == self.target_pos:
+          if distance(self.pos, self.target_pos) < tol:
                self.state = "MOVING"
                if self.path_index < len(self.model.path_points) - 1:
                     self.path_index += 1
@@ -294,5 +297,5 @@ class DiningHallModel(mesa.Model):
 
     self.datacollector.collect(self) # Collect data
 
-    # REMOVED: self.steps_since_last_agent +=1
-    # Note: self.steps is automatically incremented by Mesa now
+    # NEW: Increment simulation steps manually for graph reporting
+    self.steps = getattr(self, 'steps', 0) + 1

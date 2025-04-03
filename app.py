@@ -5,6 +5,7 @@ import matplotlib.patches as patches
 import mesa
 import numpy as np
 import random
+import time  # Add this import
 from PIL import Image # <-- Import Pillow Image
 
 # --- Assume model.py is in the same directory ---
@@ -86,62 +87,111 @@ elif 'current_map_name' in st.session_state: # Handle clearing the map
 
 # Button to start/restart simulation
 if st.sidebar.button("Run Simulation", key="run_button"):
-    st.session_state.simulation_complete = False # Reset flag
-    # Define grid size here for consistency
+    st.session_state.simulation_complete = False  # Reset flag
     grid_w = 600
     grid_h = 600
-    # Pass parameters to the updated model __init__
     st.session_state.model = DiningHallModel(N_agents, width=grid_w, height=grid_h,
-                                           agent_speed=agent_speed,
-                                           dining_wait_time=dining_wait_time,
-                                           num_dining_spots=num_dining_spots,
-                                           seed=random.randint(1, 10000)) # Add a random seed
-
+                                               agent_speed=agent_speed,
+                                               dining_wait_time=dining_wait_time,
+                                               num_dining_spots=num_dining_spots,
+                                               seed=random.randint(1, 10000))
     run_steps = 0
-    # Run the simulation
     progress_bar = st.progress(0)
     status_text = st.empty()
+    # NEW: Container to update the plot dynamically
+    plot_container = st.empty()
 
-    with st.spinner(f"Running simulation..."):
+    with st.spinner("Running simulation..."):
         for i in range(max_steps):
-            if st.session_state.model is None: # Should not happen, but safety check
-                 st.error("Model disappeared during simulation run!")
-                 break
+            if st.session_state.model is None:
+                st.error("Model disappeared during simulation run!")
+                break
             st.session_state.model.step()
             run_steps += 1
 
-            # Update progress bar and status text periodically
-            if i % 10 == 0: # Update every 10 steps
+            if i % 10 == 0:  # Update every 10 steps
                 progress = i / max_steps
                 progress_bar.progress(progress)
                 active_agents = len(st.session_state.model.agents) if st.session_state.model.agents else 0
                 exited_agents = st.session_state.model.exited_count
                 status_text.text(f"Step {run_steps}/{max_steps} | Active: {active_agents} | Exited: {exited_agents}/{N_agents}")
 
-            # Updated stopping condition
+                # Build the current dynamic visualization
+                fig, ax = plt.subplots(figsize=(10, 10))
+                ax.set_xlim(0, st.session_state.model.grid_width)
+                ax.set_ylim(0, st.session_state.model.grid_height)
+                ax.set_aspect('equal', adjustable='box')
+                ax.set_title("Agent Positions")
+                ax.set_xlabel("X")
+                ax.set_ylabel("Y")
+
+                # Draw Background Map if available
+                if st.session_state.uploaded_map_data is not None:
+                    try:
+                        extent = (map_left, map_right, map_bottom, map_top)
+                        ax.imshow(st.session_state.uploaded_map_data,
+                                  extent=extent,
+                                  alpha=map_alpha,
+                                  aspect='auto',
+                                  origin='upper',
+                                  zorder=0)
+                    except Exception as e:
+                        st.warning(f"Could not display map image: {e}")
+
+                # Draw Path (if enabled)
+                if show_path and hasattr(st.session_state.model, 'path_points') and st.session_state.model.path_points:
+                    path_x = [p[0] for p in st.session_state.model.path_points]
+                    path_y = [p[1] for p in st.session_state.model.path_points]
+                    ax.plot(path_x, path_y, color='lightgray', linestyle='--', linewidth=2, label="Path", zorder=1)
+
+                # Draw Dining Spots (if enabled)
+                if show_dining_spots and hasattr(st.session_state.model, 'dining_spots'):
+                    for j, spot in enumerate(st.session_state.model.dining_spots):
+                        if isinstance(spot, dict) and "pos" in spot and "occupied_by" in spot:
+                            color = 'darkgreen' if spot["occupied_by"] is not None else 'lightgreen'
+                            spot_patch = patches.Circle(spot["pos"], radius=agent_radius_vis + 2, color=color, alpha=0.7, zorder=2)
+                            ax.add_patch(spot_patch)
+                            ax.text(spot["pos"][0], spot["pos"][1], str(j), color='white', ha='center', va='center', fontsize=8, zorder=3)
+                        else:
+                            st.warning(f"Dining spot data format incorrect: {spot}")
+
+                # Draw Agents
+                agent_colors = {
+                    "ENTERING": "gray", "MOVING": "blue", "APPROACHING_DINING": "orange",
+                    "MOVING_TO_SPOT": "purple", "WAITING": "red", "DINING": "pink",
+                    "REJOINING_PATH": "cyan", "EXITED": "black"
+                }
+                if hasattr(st.session_state.model, 'agents'):
+                    for agent in st.session_state.model.agents:
+                        if hasattr(agent, 'state') and hasattr(agent, 'pos'):
+                            color = agent_colors.get(agent.state, "black")
+                            radius = agent_radius_vis * 1.5 if agent.state == "WAITING" else agent_radius_vis
+                            agent_patch = patches.Circle(agent.pos, radius=radius, color=color, alpha=0.9, zorder=4)
+                            ax.add_patch(agent_patch)
+                        else:
+                            st.warning(f"Agent data format incorrect or incomplete for agent: {agent}")
+                ax.invert_yaxis()
+                ax.legend(fontsize='small', loc='upper left', bbox_to_anchor=(1.02, 1), borderaxespad=0.)
+                plt.tight_layout(rect=[0, 0, 0.9, 1])
+                # Update the plot container with the current figure
+                plot_container.pyplot(fig)
+                plt.close(fig)
+
+            time.sleep(0.05)  # Adjust delay to control animation speed
+
+            # Check stopping condition
             if st.session_state.model.exited_count >= N_agents and len(st.session_state.model.agents) == 0:
-                 st.success(f"All {N_agents} agents exited by step {run_steps}.")
-                 st.session_state.simulation_complete = True
-                 progress_bar.progress(1.0)
-                 status_text.text(f"Simulation Complete at step {run_steps}. All agents exited.")
-                 break
+                st.success(f"All {N_agents} agents exited by step {run_steps}.")
+                st.session_state.simulation_complete = True
+                progress_bar.progress(1.0)
+                status_text.text(f"Simulation Complete at step {run_steps}. All agents exited.")
+                break
 
-        if not st.session_state.simulation_complete:
-            active_agents = len(st.session_state.model.agents) if st.session_state.model.agents else 0
-            final_message = (f"Simulation finished after {run_steps} steps (max steps reached). "
-                             f"{st.session_state.model.exited_count}/{N_agents} agents exited. "
-                             f"{active_agents} agents still active.")
-            st.info(final_message)
-            status_text.text(final_message)
-            progress_bar.progress(1.0)
-            st.session_state.simulation_complete = True
-
-
-    # Store results in session state only after completion
+    # Store final results
     if st.session_state.model:
         st.session_state.results_df = st.session_state.model.datacollector.get_model_vars_dataframe()
     else:
-        st.session_state.results_df = pd.DataFrame() # Ensure it exists but is empty
+        st.session_state.results_df = pd.DataFrame()
 
 
 # --- Display Results ---
