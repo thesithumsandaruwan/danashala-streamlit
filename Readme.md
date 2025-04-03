@@ -1,5 +1,9 @@
 ### danashala simulation streamlit approach
 
+create a virtual enviorment
+`python -m venv .venv`
+`.\.venv\Scripts\activate`
+
 install dependencies
 `pip install -r requirements.txt`
 
