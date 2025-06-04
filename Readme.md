@@ -1,5 +1,5 @@
 # Danashala simulation
-## Streamlit approach
+## Streamlit-approach
 
 ### Installation
 
